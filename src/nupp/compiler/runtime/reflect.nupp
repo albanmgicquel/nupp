@@ -179,24 +179,36 @@ export function install(namespace: any): any
 
     api.runtime = reflect.get
 
-    -- Derive recipes register in `nupp.derive` as their declarations load. It is
-    -- required on first use, so a program that reads no derive data never loads it.
+    -- Derive recipes register as their declarations load, through the runtime
+    -- `nupp.derive` installs on the namespace. Reading it there rather than requiring
+    -- that module keeps reflection out of its dependencies, which reach back here.
+    -- A program that derives nothing has no registry and no data to answer.
+    local function registry(): any
+        return rawget(namespace, "__derive")
+    end
+
     function api.derived(typeObject: any, key: string): any
-        local entry = require("nupp.derive").entry(typeObject)
+        local derive = registry()
+        local entry = derive and derive.entry(typeObject)
         local data = entry and entry.schema.data or nil
 
         return data and data[key]
     end
 
     function api.initializer(typeObject: any): any
-        return require("nupp.derive").initializer(typeObject)
+        local derive = registry()
+
+        return derive and derive.initializer(typeObject)
     end
 
     -- Collects before iterating: a module the loop loads registers its declarations,
     -- and the registry's traversal cannot take a new key partway through.
     function api.declarations(key: string): any
         local found: {any} = {}
-        require("nupp.derive").forEach(function(entry: any): nil
+        local derive = registry()
+        local visit = derive and derive.forEach or function(_: any): nil
+        end
+        visit(function(entry: any): nil
             local data = entry.schema.data
             if data and data[key] ~= nil then
                 found[#found + 1] = entry
